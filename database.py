@@ -1,21 +1,28 @@
 import mysql.connector
 from mysql.connector import Error
 
-from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT
+from config import DB_HOST, DB_USER, DB_PASSWORD, DB_NAME, DB_PORT, DB_SSL
 
 
 def get_connection():
 
     try:
-
-        connection = mysql.connector.connect(
+        connect_args = dict(
             host=DB_HOST,
             user=DB_USER,
             password=DB_PASSWORD,
             database=DB_NAME,
             port=DB_PORT,
-            use_pure=True
+            use_pure=True,
         )
+
+        # Use SSL for cloud databases (e.g. Render, PlanetScale, Aiven)
+        if DB_SSL:
+            connect_args["ssl_disabled"] = False
+        else:
+            connect_args["auth_plugin"] = "mysql_native_password"
+
+        connection = mysql.connector.connect(**connect_args)
 
         return connection
 
