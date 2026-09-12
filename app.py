@@ -1,0 +1,349 @@
+import os
+from datetime import date
+
+from flask import Flask, flash, redirect, render_template_string, request, url_for
+
+from database import execute_query, fetch_all
+
+app = Flask(__name__)
+app.secret_key = os.getenv("SECRET_KEY", "college-management-development-key")
+
+
+@app.after_request
+def disable_browser_cache(response):
+    response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    return response
+
+ENTITIES = {
+    "students": {
+        "label": "Students",
+        "table": "students",
+        "columns": ["student_id", "name", "age", "gender", "course", "year", "phone", "email", "address"],
+        "form": ["name", "age", "gender", "course", "year", "phone", "email", "address"],
+        "display_columns": ["name", "age", "gender", "course", "year", "phone", "email", "address"],
+    },
+    "teachers": {
+        "label": "Teachers",
+        "table": "teachers",
+        "columns": ["teacher_id", "name", "subject", "phone", "email"],
+        "form": ["name", "subject", "phone", "email"],
+        "display_columns": ["name", "subject", "phone", "email"],
+    },
+    "courses": {
+        "label": "Courses",
+        "table": "courses",
+        "columns": ["course_id", "course_name", "duration", "fees"],
+        "form": ["course_name", "duration", "fees"],
+        "display_columns": ["course_name", "duration", "fees"],
+    },
+    "attendance": {
+        "label": "Attendance",
+        "table": "attendance",
+        "columns": ["attendance_id", "student_id", "attendance_date", "status"],
+        "form": ["student_id", "attendance_date", "status"],
+        "display_columns": ["name", "attendance_date", "status"],
+    },
+    "marks": {
+        "label": "Marks",
+        "table": "marks",
+        "columns": ["mark_id", "student_id", "subject", "marks"],
+        "form": ["student_id", "subject", "marks"],
+        "display_columns": ["name", "subject", "marks"],
+    },
+    "fees": {
+        "label": "Fees",
+        "table": "fees",
+        "columns": ["fee_id", "student_id", "amount", "payment_date", "status"],
+        "form": ["student_id", "amount", "payment_date", "status"],
+        "display_columns": ["name", "amount", "payment_date", "status"],
+    },
+}
+
+TEMPLATE = """
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>College Management System</title>
+    <style>
+        :root { --ink:#172033; --muted:#64748b; --line:#d8dee9; --paper:#fff; --wash:#f4f6fa; --blue:#1459d9; --navy:#111b55; --cyan:#0b9bb5; }
+        * { box-sizing:border-box; } body { margin:0; color:var(--ink); background:var(--wash); font:14px/1.45 "Segoe UI",Tahoma,sans-serif; }
+        .shell { display:grid; grid-template-columns:190px 1fr; min-height:100vh; } aside { background:linear-gradient(180deg,#111653,#123bd0); color:#fff; padding:34px 18px 20px; display:flex; flex-direction:column; } .brand { text-align:center; margin-bottom:42px; } .brand-mark { color:#36b9f0; font-size:30px; line-height:1; } .brand strong { display:block; margin-top:14px; font-size:17px; letter-spacing:.04em; } .brand small { color:#6ed9ff; font-size:9px; letter-spacing:.1em; } .side-nav { display:grid; gap:8px; } .side-nav a { color:#dbeafe; padding:10px 12px; border-radius:4px; text-decoration:none; font-weight:600; } .side-nav a:hover,.side-nav a.active { background:#245be2; color:white; } .side-footer { margin-top:auto; color:#b8c9ff; text-align:center; font-size:10px; }
+        .content { min-width:0; padding:26px 30px 40px; } .topbar { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:20px; } h1 { margin:0; font-size:30px; } .subtitle { color:var(--muted); margin:4px 0 0; } .today { color:var(--blue); font-weight:700; text-align:right; font-size:12px; } .today span { display:block; color:var(--muted); font-size:10px; text-transform:uppercase; }
+        .tabs { display:flex; flex-wrap:wrap; border-bottom:1px solid #bdc6d7; margin-bottom:20px; } .tabs a { color:var(--ink); text-decoration:none; padding:10px 18px; border:1px solid #b8c2d2; border-bottom:0; background:#dce3ef; } .tabs a:first-child { border-radius:4px 0 0 0; } .tabs a.active { color:white; background:var(--blue); border-color:var(--blue); font-weight:700; }
+        .welcome, section, .stat { background:var(--paper); border:1px solid var(--line); border-radius:3px; } .welcome { padding:18px 20px; margin-bottom:18px; } h2 { margin:0 0 4px; font-size:20px; } .welcome p { color:var(--muted); margin:0; } .stats { display:grid; grid-template-columns:repeat(6,1fr); gap:10px; margin-bottom:22px; } .stat { padding:14px 16px; border-top:3px solid var(--cyan); } .stat strong { display:block; color:var(--blue); font-size:25px; } .stat span { color:var(--muted); font-size:12px; }
+        .quick { padding:18px 20px; margin-bottom:18px; } .quick h3,.status h3 { color:var(--blue); margin:0 0 12px; font-size:13px; } .actions { display:flex; flex-wrap:wrap; gap:10px; } button { border:0; border-radius:2px; padding:10px 16px; color:white; background:var(--blue); font:600 13px inherit; cursor:pointer; } button:hover { background:#0c43ac; } .status { padding:18px 20px; min-height:135px; } .status p { color:var(--muted); margin:0; }
+        .grid { display:grid; grid-template-columns:minmax(260px,340px) 1fr; gap:20px; align-items:start; } section { padding:20px; } label { display:block; margin:12px 0 5px; color:var(--muted); font-size:13px; font-weight:600; } input { width:100%; border:1px solid #cfd5df; border-radius:3px; padding:10px; font:inherit; } table { width:100%; border-collapse:collapse; display:block; overflow-x:auto; white-space:nowrap; } th,td { text-align:left; padding:11px 12px; border-bottom:1px solid var(--line); } th { color:var(--muted); font-size:12px; text-transform:uppercase; } .delete { margin:0; padding:5px 8px; background:#c93545; font-size:12px; } .flash { background:#e4f6ed; border:1px solid #a8dfc1; color:#17643b; padding:10px 14px; border-radius:3px; margin-bottom:18px; }
+        @media (max-width:900px) { .stats { grid-template-columns:repeat(3,1fr); } } @media (max-width:650px) { .shell { display:block; } aside { padding:18px; } .brand { margin-bottom:15px; } .side-nav { grid-template-columns:repeat(3,1fr); } .side-footer { display:none; } .content { padding:20px 14px; } .topbar { gap:14px; } h1 { font-size:25px; } .stats { grid-template-columns:repeat(2,1fr); } }
+    </style>
+    <style>
+        :root { --app-bg:#081431; --panel:#101f43; --purple:#7044f5; --pink:#e83e9f; --cyan:#1995ff; --green:#10e981; --text:#f8faff; --muted:#a7b4d4; --border:#203563; }
+        body { background:var(--app-bg); color:var(--text); font-family:"Segoe UI",Tahoma,sans-serif; }
+        .shell { grid-template-columns:200px 1fr; }
+        aside { background:#07122e; padding:24px 14px 18px; }
+        .brand { margin-bottom:34px; } .brand-mark { color:var(--pink); font-size:0; }
+        .brand-mark::after { content:"PRMCEAM"; font-size:25px; font-weight:800; }
+        .brand strong { margin-top:10px; font-size:20px; } .brand small { color:#a7b4d4; font-size:10px; }
+        .side-nav { gap:7px; } .side-nav a { color:var(--muted); border-radius:0; padding:13px 14px; }
+        .side-nav a:hover,.side-nav a.active { background:var(--purple); color:#fff; }
+        .side-footer { background:#1a2945; padding:18px 8px; color:#dbeafe; }
+        .content { padding:26px 16px 28px; } .topbar { margin:0 4px 18px; }
+        h1 { font-size:28px; color:#fff; } .subtitle { color:var(--muted); }
+        .today { color:#dbeafe; } .today span { display:none; }
+        .tabs { margin:0 0 8px; border-bottom:2px solid #263b6e; }
+        .tabs a { color:#dbeafe; background:#142753; border-color:#7180a4; padding:10px 18px; }
+        .tabs a.active { background:var(--purple); border-color:var(--purple); }
+        .welcome { background:transparent; border:0; padding:0; margin:0; height:0; overflow:hidden; }
+        .stats { grid-template-columns:repeat(6,1fr); gap:10px; margin:0 0 14px; }
+        .stat { background:var(--panel); border:1px solid var(--border); border-top:3px solid var(--purple); border-radius:0; padding:16px; min-height:108px; }
+        .stat:nth-child(2) { border-top-color:var(--cyan); } .stat:nth-child(3) { border-top-color:#f59e0b; }
+        .stat:nth-child(4) { border-top-color:var(--pink); } .stat:nth-child(5) { border-top-color:var(--green); }
+        .stat:nth-child(6) { border-top-color:#f59e0b; } .stat strong { color:#fff; font-size:27px; }
+        .stat span { color:var(--muted); } .stat small { display:block; color:var(--muted); margin-top:10px; font-size:10px; }
+        .dashboard-grid { display:grid; grid-template-columns:1.35fr .8fr 1.35fr; gap:10px; }
+        .dashboard-panel { background:var(--panel); border:1px solid var(--border); padding:16px; min-height:284px; }
+        .dashboard-panel h3 { margin:0 0 5px; font-size:15px; } .dashboard-panel p { color:var(--muted); margin:0; font-size:12px; }
+        .chart { height:190px; margin-top:28px; padding:10px 12px 0 32px; border-bottom:1px solid #284475; border-left:1px solid #284475; position:relative; background:linear-gradient(to bottom,transparent 32%,#1b3561 33%,transparent 34%,transparent 65%,#1b3561 66%,transparent 67%); }
+        .chart-line { position:absolute; left:32px; right:12px; top:58%; height:3px; background:var(--green); transform:rotate(-4deg); transform-origin:left; }
+        .chart-dot { position:absolute; right:10px; top:43%; width:13px; height:13px; background:var(--green); border-radius:50%; }
+        .ring { width:166px; height:166px; margin:16px auto 8px; border-radius:50%; background:conic-gradient(var(--green) 0 78%,#23477f 78% 100%); display:grid; place-items:center; }
+        .ring::after { content:""; width:116px; height:116px; border-radius:50%; background:var(--panel); }
+        .ring-label { position:absolute; margin-top:92px; text-align:center; font-size:24px; font-weight:800; } .legend { text-align:center; color:var(--green)!important; }
+        .quick,.status { background:var(--panel); border:1px solid var(--border); border-radius:0; padding:16px; margin-top:10px; }
+        .quick h3,.status h3 { color:#fff; } .actions button { border-radius:0; }
+        section { background:var(--panel); border-color:var(--border); border-radius:0; } label,input,select { color:var(--text); } input,select { background:#f8faff; color:#172033; }
+        th { color:#dbeafe; background:#1a315f; } td { color:#dbeafe; } table { border:1px solid #7180a4; }
+        @media (max-width:1100px) { .stats { grid-template-columns:repeat(3,1fr); } .dashboard-grid { grid-template-columns:1fr 1fr; } .dashboard-grid .dashboard-panel:first-child { grid-column:span 2; } }
+        @media (max-width:650px) { .dashboard-grid { grid-template-columns:1fr; } .dashboard-grid .dashboard-panel:first-child { grid-column:auto; } }
+        .topbar-copy h1 { margin-bottom:2px; } .topbar-copy .subtitle { margin:0; }
+        .search-box { width:160px; border:0; border-radius:0; background:#13244b; color:#dbeafe; padding:10px; }
+        .event-form { display:grid; grid-template-columns:1fr 120px auto; gap:8px; margin:10px 0 12px; }
+        .event-form input { min-width:0; border:2px solid #b8c2d2; border-radius:0; padding:8px; }
+        .event-form input[name="description"] { grid-column:1 / 3; }
+        .event-button { border-radius:0; padding:10px 16px; } .event-add { background:#10b981; }
+        .event-update { background:#7044f5; } .event-delete { background:#ef4444; }
+        .events-table th,.events-table td { padding:8px 10px; } .events-table td:last-child { white-space:normal; }
+        .attendance-key { color:var(--green)!important; font-weight:700; text-align:left; margin-top:8px!important; }
+        .attendance-key::before { content:"●"; margin-right:8px; } .attendance-absent { color:#ff4f86!important; }
+        .entity-actions { display:flex; gap:8px; margin-top:16px; }
+        .entity-actions button { border-radius:0; } .entity-update { background:#7044f5; }
+        .entity-delete { background:#ef4444; }
+        .internal-id { display:none; }
+        .entity-clear { background:#64748b; } .entity-row { cursor:pointer; }
+    </style>
+</head>
+<body><div class="shell"><aside><div class="brand"><div class="brand-mark">◆</div><strong>COLLEGE</strong><small>MANAGEMENT SYSTEM</small></div><nav class="side-nav"><a class="{{ 'active' if section == 'dashboard' else '' }}" href="{{ url_for('dashboard') }}">Dashboard</a>{% for key, item in entities.items() %}<a class="{{ 'active' if key == section else '' }}" href="{{ url_for('dashboard', section=key) }}">{{ item.label }}</a>{% endfor %}</nav><div class="side-footer">College Management System<br>&copy; 2026</div></aside><main class="content">
+<div class="topbar"><div class="topbar-copy"><h1>{{ 'Welcome back, Ayush Pawar!' if section == 'dashboard' else entity.label }}</h1><p class="subtitle">{{ "Here's what's happening in your college today." if section == 'dashboard' else 'Manage your college activities from one place' }}</p></div>{% if section == 'dashboard' %}<div style="display:flex;align-items:center;gap:20px"><input class="search-box" type="search" placeholder="Search anything..."><div class="today">{{ today }}</div></div>{% else %}<div class="today">{{ today }}</div>{% endif %}</div>
+  {% with messages = get_flashed_messages() %}{% for message in messages %}<div class="flash">{{ message }}</div>{% endfor %}{% endwith %}
+    <nav class="tabs"><a class="{{ 'active' if section == 'dashboard' else '' }}" href="{{ url_for('dashboard') }}">Dashboard</a>{% for key, item in entities.items() %}<a class="{{ 'active' if key == section else '' }}" href="{{ url_for('dashboard', section=key) }}">{{ item.label }}</a>{% endfor %}</nav>
+    {% if section == 'dashboard' %}<div class="stats">{% for key, item in counts.items() %}<div class="stat"><strong>{% if key == 'fees' %}Rs {{ '{:,.0f}'.format(fee_total) }}{% else %}{{ item }}{% endif %}</strong><span>{% if key == 'fees' %}Total Fees Collected{% else %}Total {{ entities[key].label }}{% endif %}</span><small>{% if key == 'fees' %}Live database total{% else %}Live database count{% endif %}</small></div>{% endfor %}</div><div class="dashboard-grid"><div class="dashboard-panel"><h3>Attendance overview</h3><p>This week's attendance performance</p><div class="chart"><div class="chart-line"></div><div class="chart-dot"></div></div></div><div class="dashboard-panel"><h3>Today's attendance</h3><div class="ring"><div class="ring-label">{{ ((present * 100) / (present + absent))|round|int if present + absent else 0 }}%</div></div><p class="legend attendance-key">Present &nbsp; {{ present }}</p><p class="legend attendance-key attendance-absent">Absent &nbsp; {{ absent }}</p></div><div class="dashboard-panel"><h3>Upcoming Events</h3><form class="event-form" method="post" action="{{ url_for('add_event') }}"><input name="title" placeholder="Title" required><input name="event_date" type="date" value="{{ today }}" required><input name="description" placeholder="Description"><button class="event-button event-add" type="submit">Add</button><button class="event-button event-update" type="button">Update</button><button class="event-button event-delete" type="reset">Delete</button></form><table class="events-table"><thead><tr><th>ID</th><th>Title</th><th>Date</th><th>Description</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event[0] }}</td><td>{{ event[1] }}</td><td>{{ event[2] }}</td><td>{{ event[3] }}</td></tr>{% else %}<tr><td colspan="4">No records found.</td></tr>{% endfor %}</tbody></table></div></div><div class="dashboard-panel" style="margin-top:10px"><h3>Recent Students</h3><p>Latest students in the database</p>{% if recent_students %}<table style="margin-top:12px"><thead><tr><th>ID</th><th>Name</th><th>Course</th><th>Year</th></tr></thead><tbody>{% for row in recent_students %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>{% else %}<p style="margin-top:18px">No student records found.</p>{% endif %}</div>{% else %}
+  <div class="grid">
+    <section><h2>Add {{ entity.label[:-1] if entity.label.endswith('s') else entity.label }}</h2><form id="entity-form" data-entity="{{ section }}" method="post" action="{{ url_for('add_record', entity_name=section) }}">
+    {% for field in entity.form %}<label for="{{ field }}">{{ 'Student Name' if field == 'student_id' else field.replace('_', ' ').title() }}</label>{% if field == 'student_id' %}<select id="{{ field }}" name="{{ field }}" required><option value="">Select student</option>{% for student_id, student_name in student_options %}<option value="{{ student_id }}">{{ student_name }}</option>{% endfor %}</select>{% elif field == 'status' %}<select id="{{ field }}" name="{{ field }}" required>{% if section == 'fees' %}<option value="Paid">Paid</option><option value="Pending">Pending</option>{% else %}<option value="Present">Present</option><option value="Absent">Absent</option>{% endif %}</select>{% else %}<input id="{{ field }}" name="{{ field }}" type="{{ 'date' if field.endswith('date') else ('number' if field in ['age', 'year', 'duration'] else 'text') }}" value="{{ today if field.endswith('date') else '' }}" {{ 'required' if field in ['name','course_name','attendance_date','subject'] else '' }}>{% endif %}{% endfor %}
+    <div class="entity-actions"><button type="submit">Add record</button><button class="entity-update" type="button">Update</button><button class="entity-delete" type="button" disabled>Delete</button><button class="entity-clear" type="reset">Clear</button></div>
+    </form></section>
+    <section><h2>{{ entity.label }}</h2>{% if rows %}<table class="entity-table"><thead><tr><th class="internal-id">Record</th>{% for column in entity.display_columns %}<th>{{ column.replace('_', ' ').title() }}</th>{% endfor %}<th>Action</th></tr></thead><tbody>{% for row in display_rows %}<tr class="entity-row" data-values='{{ rows[loop.index0][1:]|tojson }}'><td class="internal-id">{{ row[0] }}</td>{% for value in row[1:] %}<td>{{ value }}</td>{% endfor %}<td><form method="post" action="{{ url_for('delete_record', entity_name=section, record_id=row[0]) }}"><button class="delete" type="submit">Delete</button></form></td></tr>{% endfor %}</tbody></table>{% else %}<p>No records found.</p>{% endif %}</section>
+</div>
+                {% endif %}
+<script>
+    const entityForm = document.querySelector('#entity-form');
+    const entityRows = document.querySelectorAll('.entity-row');
+    if (entityForm) {
+        const entityUpdate = entityForm.querySelector('.entity-update');
+        const entityDelete = entityForm.querySelector('.entity-delete');
+        const entityAdd = entityForm.querySelector('button[type="submit"]');
+        const entityFields = {{ entity.form|tojson if entity else '[]' }};
+        const entityColumns = {{ entity.columns|tojson if entity else '[]' }};
+        entityRows.forEach((row) => row.addEventListener('click', (event) => {
+            if (event.target.closest('button')) return;
+            const recordId = row.cells[0].textContent.trim();
+            const rawValues = JSON.parse(row.dataset.values || '[]');
+            entityFields.forEach((field) => {
+                const columnIndex = entityColumns.indexOf(field) - 1;
+                const input = entityForm.querySelector(`[name="${field}"]`);
+                if (input && columnIndex >= 0) input.value = rawValues[columnIndex] ?? '';
+            });
+            entityForm.action = `/update/${entityForm.dataset.entity}/${recordId}`;
+            entityUpdate.type = 'submit';
+            entityDelete.disabled = false;
+            entityDelete.onclick = () => {
+                entityForm.action = `/delete/${entityForm.dataset.entity}/${recordId}`;
+                entityForm.submit();
+            };
+            entityAdd.disabled = true;
+            entityUpdate.focus();
+        }));
+    }
+    const eventForm = document.querySelector('.event-form');
+    const eventRows = document.querySelectorAll('.events-table tbody tr');
+    if (eventForm) {
+        const updateButton = eventForm.querySelector('.event-update');
+        const addButton = eventForm.querySelector('.event-add');
+        const titleInput = eventForm.querySelector('[name="title"]');
+        const dateInput = eventForm.querySelector('[name="event_date"]');
+        const descriptionInput = eventForm.querySelector('[name="description"]');
+        const deleteButton = eventForm.querySelector('.event-delete');
+        let selectedEventId = null;
+        eventRows.forEach((row) => {
+            if (row.cells.length < 4) return;
+            row.style.cursor = 'pointer';
+            row.addEventListener('click', () => {
+                selectedEventId = row.cells[0].textContent.trim();
+                titleInput.value = row.cells[1].textContent.trim();
+                dateInput.value = row.cells[2].textContent.trim();
+                descriptionInput.value = row.cells[3].textContent.trim();
+                eventForm.action = `/events/update/${row.cells[0].textContent.trim()}`;
+                updateButton.type = 'submit';
+                addButton.disabled = true;
+                updateButton.focus();
+            });
+        });
+        deleteButton.type = 'button';
+        deleteButton.addEventListener('click', () => {
+            if (selectedEventId) window.location.href = `/events/delete/${selectedEventId}`;
+        });
+    }
+</script>
+</main></div></body></html>
+"""
+
+
+def _load_counts():
+    return {name: len(fetch_all(f"SELECT {item['columns'][0]} FROM {item['table']}")) for name, item in ENTITIES.items()}
+
+
+def _load_dashboard_data():
+    fee_total = fetch_all("SELECT COALESCE(SUM(amount), 0) FROM fees")
+    today_attendance = fetch_all(
+        "SELECT status, COUNT(*) FROM attendance WHERE attendance_date=%s GROUP BY status",
+        (date.today(),),
+    )
+    return {
+        "fee_total": float(fee_total[0][0] or 0) if fee_total else 0,
+        "present": sum(count for status, count in today_attendance if str(status).lower() == "present"),
+        "absent": sum(count for status, count in today_attendance if str(status).lower() == "absent"),
+        "events": fetch_all(
+            "SELECT event_id, title, event_date, description FROM events ORDER BY event_date LIMIT 5"
+        ),
+    }
+
+
+def _load_display_rows(entity_name, entity, rows):
+    if entity_name in {"attendance", "marks", "fees"}:
+        table = entity["table"]
+        linked_columns = ", ".join(
+            f"{table}.{column}" for column in entity["form"] if column != "student_id"
+        )
+        linked_rows = fetch_all(
+            f"SELECT {table}.{entity['columns'][0]}, students.name, {linked_columns} "
+            f"FROM {table} JOIN students ON {table}.student_id = students.student_id "
+            f"ORDER BY {table}.{entity['columns'][0]} DESC"
+        )
+        return linked_rows
+    return [[row[0], *row[1:]] for row in rows]
+
+
+@app.get("/")
+def dashboard():
+    section = request.args.get("section", "dashboard")
+    entity = ENTITIES.get(section)
+    rows = []
+    display_rows = []
+    recent_students = fetch_all(
+        "SELECT student_id, name, course, year FROM students ORDER BY student_id DESC LIMIT 5"
+    ) if section == "dashboard" else []
+    student_options = fetch_all("SELECT student_id, name FROM students ORDER BY name")
+    dashboard_data = _load_dashboard_data() if section == "dashboard" else {
+        "fee_total": 0,
+        "present": 0,
+        "absent": 0,
+        "events": [],
+    }
+    if entity:
+        rows = fetch_all(f"SELECT {', '.join(entity['columns'])} FROM {entity['table']} ORDER BY {entity['columns'][0]} DESC")
+        display_rows = _load_display_rows(section, entity, rows)
+    return render_template_string(
+        TEMPLATE,
+        entities=ENTITIES,
+        counts=_load_counts(),
+        **dashboard_data,
+        section=section,
+        entity=entity,
+        rows=rows,
+        display_rows=display_rows,
+        recent_students=recent_students,
+        student_options=student_options,
+        today=date.today().isoformat(),
+    )
+
+
+@app.post("/events/add")
+def add_event():
+    execute_query(
+        "INSERT INTO events (title, event_date, description) VALUES (%s, %s, %s)",
+        (request.form.get("title", "").strip(), request.form.get("event_date", ""), request.form.get("description", "").strip()),
+    )
+    return redirect(url_for("dashboard"))
+
+
+@app.route("/events/delete/<int:event_id>", methods=["GET", "POST"])
+def delete_event(event_id):
+    execute_query("DELETE FROM events WHERE event_id = %s", (event_id,))
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/events/update/<int:event_id>")
+def update_event(event_id):
+    execute_query(
+        "UPDATE events SET title=%s, event_date=%s, description=%s WHERE event_id=%s",
+        (request.form.get("title", "").strip(), request.form.get("event_date", ""), request.form.get("description", "").strip(), event_id),
+    )
+    return redirect(url_for("dashboard"))
+
+
+@app.post("/add/<entity_name>")
+def add_record(entity_name):
+    if entity_name not in ENTITIES:
+        return redirect(url_for("dashboard"))
+    entity = ENTITIES[entity_name]
+    values = [request.form.get(field, "").strip() for field in entity["form"]]
+    if not execute_query(
+        f"INSERT INTO {entity['table']} ({', '.join(entity['form'])}) VALUES ({', '.join(['%s'] * len(values))})",
+        values,
+    ):
+        flash("The record could not be added. Check the database connection and values.")
+    else:
+        flash(f"{entity['label'][:-1]} added successfully.")
+    return redirect(url_for("dashboard", section=entity_name))
+
+
+@app.post("/delete/<entity_name>/<int:record_id>")
+def delete_record(entity_name, record_id):
+    if entity_name in ENTITIES:
+        entity = ENTITIES[entity_name]
+        execute_query(f"DELETE FROM {entity['table']} WHERE {entity['columns'][0]} = %s", (record_id,))
+        flash("Record deleted.")
+    return redirect(url_for("dashboard", section=entity_name))
+
+
+@app.post("/update/<entity_name>/<int:record_id>")
+def update_record(entity_name, record_id):
+    if entity_name not in ENTITIES:
+        return redirect(url_for("dashboard"))
+    entity = ENTITIES[entity_name]
+    values = [request.form.get(field, "").strip() for field in entity["form"]]
+    assignments = ", ".join(f"{field} = %s" for field in entity["form"])
+    if execute_query(
+        f"UPDATE {entity['table']} SET {assignments} WHERE {entity['columns'][0]} = %s",
+        (*values, record_id),
+    ):
+        flash(f"{entity['label'][:-1]} updated successfully.")
+    else:
+        flash("The record could not be updated. Check the database connection and values.")
+    return redirect(url_for("dashboard", section=entity_name))
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
