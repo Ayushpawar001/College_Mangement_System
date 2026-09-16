@@ -1,4 +1,3 @@
-import os
 import psycopg2
 from psycopg2 import OperationalError
 
@@ -25,7 +24,6 @@ def execute_query(query, values=None):
     cursor = connection.cursor()
 
     try:
-        # Convert MySQL %s placeholders — psycopg2 also uses %s so no change needed
         cursor.execute(query, values or ())
         connection.commit()
         return True
