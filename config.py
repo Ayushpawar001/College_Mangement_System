@@ -2,6 +2,7 @@ import os
 
 
 def load_local_env():
+    """Load environment variables from .env file if it exists."""
     env_path = os.path.join(os.path.dirname(__file__), ".env")
 
     if not os.path.isfile(env_path):
@@ -21,11 +22,16 @@ def load_local_env():
 
 load_local_env()
 
+# --- Application ---
+PORT       = int(os.getenv("PORT",       "5000"))
+SECRET_KEY =     os.getenv("SECRET_KEY", "college-management-secret-key-2026")
+
+# --- Database ---
 DB_HOST     = os.getenv("DB_HOST",     "127.0.0.1")
 DB_USER     = os.getenv("DB_USER",     "root")
 DB_PASSWORD = os.getenv("DB_PASSWORD", "Ayushpawar01")
 DB_NAME     = os.getenv("DB_NAME",     "college_db")
 DB_PORT     = int(os.getenv("DB_PORT", "3306"))
 
-# Set DB_SSL=true in Render environment variables for cloud MySQL
+# --- SSL (set DB_SSL=true for cloud/Render deployment) ---
 DB_SSL      = os.getenv("DB_SSL", "false").lower() == "true"

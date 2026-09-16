@@ -4,9 +4,10 @@ from datetime import date
 from flask import Flask, flash, redirect, render_template_string, request, url_for
 
 from database import execute_query, fetch_all
+from config import PORT, SECRET_KEY
 
 app = Flask(__name__)
-app.secret_key = os.getenv("SECRET_KEY", "college-management-development-key")
+app.secret_key = SECRET_KEY
 
 
 @app.after_request
@@ -346,4 +347,4 @@ def update_record(entity_name, record_id):
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", "5000")))
+    app.run(host="0.0.0.0", port=PORT)
