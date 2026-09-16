@@ -11,6 +11,87 @@ app = Flask(__name__)
 app.secret_key = SECRET_KEY
 
 
+def init_db():
+    """Auto-create all tables and default admin on startup."""
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS users (
+            user_id    SERIAL PRIMARY KEY,
+            username   VARCHAR(100) UNIQUE NOT NULL,
+            email      VARCHAR(150) UNIQUE NOT NULL,
+            password   VARCHAR(256) NOT NULL,
+            role       VARCHAR(20) DEFAULT 'admin',
+            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS students (
+            student_id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            age INT, gender VARCHAR(20),
+            course VARCHAR(100), year INT,
+            phone VARCHAR(15), email VARCHAR(100), address VARCHAR(255)
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS teachers (
+            teacher_id SERIAL PRIMARY KEY,
+            name VARCHAR(100) NOT NULL,
+            subject VARCHAR(100), phone VARCHAR(15), email VARCHAR(100)
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS courses (
+            course_id SERIAL PRIMARY KEY,
+            course_name VARCHAR(100), duration INT, fees DECIMAL(10,2)
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS attendance (
+            attendance_id SERIAL PRIMARY KEY,
+            student_id INT, attendance_date DATE, status VARCHAR(20),
+            FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS marks (
+            mark_id SERIAL PRIMARY KEY,
+            student_id INT, subject VARCHAR(100), marks DECIMAL(5,2),
+            FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS fees (
+            fee_id SERIAL PRIMARY KEY,
+            student_id INT, amount DECIMAL(10,2),
+            payment_date DATE, status VARCHAR(20),
+            FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
+        )
+    """)
+    execute_query("""
+        CREATE TABLE IF NOT EXISTS events (
+            event_id SERIAL PRIMARY KEY,
+            title VARCHAR(100) NOT NULL,
+            event_date DATE NOT NULL, description VARCHAR(255)
+        )
+    """)
+    # Create default admin user
+    import hashlib
+    default_pwd = hashlib.sha256("Admin@2026".encode()).hexdigest()
+    execute_query("""
+        INSERT INTO users (username, email, password, role)
+        VALUES ('admin', 'admin@prmceam.com', %s, 'admin')
+        ON CONFLICT (username) DO NOTHING
+    """, (default_pwd,))
+    print("Database initialized successfully!")
+
+
+# Initialize DB on startup
+try:
+    init_db()
+except Exception as e:
+    print(f"DB init error: {e}")
+
+
 # ─────────────────────────────────────────────
 # CACHE CONTROL
 # ─────────────────────────────────────────────
@@ -549,10 +630,18 @@ def login():
             flash("Username and password are required.")
             return render_template_string(LOGIN_TEMPLATE)
 
-        user = fetch_all(
-            "SELECT user_id, username, role FROM users WHERE username=%s AND password=%s",
-            (username, hash_password(password))
-        )
+        try:
+            hashed = hash_password(password)
+            print(f"LOGIN ATTEMPT: user={username} hash={hashed[:20]}...")
+            user = fetch_all(
+                "SELECT user_id, username, role FROM users WHERE username=%s AND password=%s",
+                (username, hashed)
+            )
+            print(f"LOGIN RESULT: {user}")
+        except Exception as e:
+            print(f"LOGIN ERROR: {e}")
+            flash(f"Database error: {e}")
+            return render_template_string(LOGIN_TEMPLATE)
 
         if user:
             session["user_id"]  = user[0][0]
