@@ -29,5 +29,5 @@ SECRET_KEY =     os.getenv("SECRET_KEY", "college-management-secret-key-2026")
 # --- Supabase PostgreSQL ---
 DATABASE_URL = os.getenv(
     "DATABASE_URL",
-    "postgresql://postgres:Ayushpawar01@db.jybtewrvrefiuanxdxdj.supabase.co:5432/postgres"
+    "postgresql://postgres:Ayushpawar01@db.jybtewrvrefiuanxdxdj.supabase.co:6543/postgres"
 )
