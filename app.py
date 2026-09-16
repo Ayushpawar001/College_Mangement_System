@@ -651,6 +651,13 @@ def _load_display_rows(entity_name, entity, rows):
 # PROTECTED ROUTES
 # ─────────────────────────────────────────────
 @app.get("/")
+def index():
+    if "user_id" in session:
+        return redirect(url_for("dashboard"))
+    return redirect(url_for("login"))
+
+
+@app.get("/home")
 @login_required
 def dashboard():
     section = request.args.get("section", "dashboard")
