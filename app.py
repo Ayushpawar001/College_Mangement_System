@@ -572,13 +572,13 @@ TEMPLATE = """
   </div>
   <div class="dashboard-panel"><h3>Today's attendance</h3>
   <div style="position:relative;width:160px;height:160px;margin:16px auto 8px;">
-    <svg viewBox="0 0 160 160" width="160" height="160">
-      <circle cx="80" cy="80" r="60" fill="none" stroke="#23477f" stroke-width="22"/>
+    <svg viewBox="0 0 160 160" width="160" height="160" style="transform:rotate(-90deg);">
+      <!-- Background full circle -->
+      <circle cx="80" cy="80" r="60" fill="none" stroke="#1e3a6e" stroke-width="22"/>
+      <!-- Green arc = attendance_pct % of circumference (2*pi*60 = 376.99) -->
       <circle cx="80" cy="80" r="60" fill="none" stroke="#10e981" stroke-width="22"
-        stroke-dasharray="{{ (attendance_pct * 3.77)|round }} 377"
-        stroke-dashoffset="94.25"
-        stroke-linecap="butt"
-        transform="rotate(-90 80 80)"/>
+        stroke-dasharray="{{ ((attendance_pct / 100) * 376.99)|round(2) }} 376.99"
+        stroke-linecap="butt"/>
     </svg>
     <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;line-height:1.2;">
       <div style="font-size:26px;font-weight:800;color:#fff;">{{ attendance_pct }}%</div>
