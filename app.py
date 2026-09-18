@@ -546,8 +546,38 @@ TEMPLATE = """
 {% if section == 'dashboard' %}
 <div class="stats">{% for key, item in counts.items() %}<div class="stat"><strong>{% if key == 'fees' %}Rs {{ '{:,.0f}'.format(fee_total) }}{% else %}{{ item }}{% endif %}</strong><span>{% if key == 'fees' %}Total Fees Collected{% else %}Total {{ entities[key].label }}{% endif %}</span><small>{% if key == 'fees' %}Live database total{% else %}Live database count{% endif %}</small></div>{% endfor %}</div>
 <div class="dashboard-grid">
-  <div class="dashboard-panel"><h3>Attendance overview</h3><p>This week's attendance performance</p><div class="chart"><div class="chart-line"></div><div class="chart-dot"></div></div></div>
-  <div class="dashboard-panel"><h3>Today's attendance</h3><div class="ring"><div class="ring-label">{{ ((present * 100) / (present + absent))|round|int if present + absent else 0 }}%</div></div><p class="legend attendance-key">Present &nbsp; {{ present }}</p><p class="legend attendance-key attendance-absent">Absent &nbsp; {{ absent }}</p></div>
+  <div class="dashboard-panel"><h3>Attendance overview</h3><p>Last 7 days performance</p>
+  {% if weekly_attendance %}
+  <div style="display:flex;align-items:flex-end;gap:6px;height:160px;margin-top:16px;padding:0 8px;border-bottom:1px solid #284475;border-left:1px solid #284475;">
+    {% for row in weekly_attendance %}
+    {% set pct = ((row[1] * 100) / row[3])|round|int if row[3] else 0 %}
+    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
+      <div style="font-size:9px;color:#a7b4d4;">{{ pct }}%</div>
+      <div style="width:100%;background:#10e981;height:{{ pct }}%;min-height:4px;border-radius:2px 2px 0 0;transition:height 0.3s;"></div>
+      <div style="font-size:9px;color:#a7b4d4;white-space:nowrap;">{{ row[0].strftime('%d/%m') if row[0] else '' }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div style="display:flex;align-items:center;justify-content:center;height:160px;color:#a7b4d4;font-size:13px;margin-top:16px;">No attendance data yet</div>
+  {% endif %}
+  </div>
+  <div class="dashboard-panel"><h3>Today's attendance</h3>
+  <div style="position:relative;width:166px;height:166px;margin:16px auto 8px;">
+    <svg width="166" height="166" style="transform:rotate(-90deg);">
+      <circle cx="83" cy="83" r="66" fill="none" stroke="#23477f" stroke-width="20"/>
+      <circle cx="83" cy="83" r="66" fill="none" stroke="#10e981" stroke-width="20"
+        stroke-dasharray="{{ (attendance_pct * 4.147)|round }} 414.7"
+        stroke-linecap="round"/>
+    </svg>
+    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
+      <div style="font-size:24px;font-weight:800;color:#fff;">{{ attendance_pct }}%</div>
+      <div style="font-size:10px;color:#a7b4d4;">Present</div>
+    </div>
+  </div>
+  <p class="legend attendance-key">Present &nbsp; {{ present }}</p>
+  <p class="legend attendance-key attendance-absent">Absent &nbsp; {{ absent }}</p>
+  </div>
   <div class="dashboard-panel"><h3>Upcoming Events</h3><form class="event-form" method="post" action="{{ url_for('add_event') }}"><input name="title" placeholder="Title" required><input name="event_date" type="date" value="{{ today }}" required><input name="description" placeholder="Description"><button class="event-button event-add" type="submit">Add</button><button class="event-button event-update" type="button">Update</button><button class="event-button event-delete" type="reset">Delete</button></form><table class="events-table"><thead><tr><th>ID</th><th>Title</th><th>Date</th><th>Description</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event[0] }}</td><td>{{ event[1] }}</td><td>{{ event[2] }}</td><td>{{ event[3] }}</td></tr>{% else %}<tr><td colspan="4">No records found.</td></tr>{% endfor %}</tbody></table></div>
 </div>
 <div class="dashboard-panel" style="margin-top:10px"><h3>Recent Students</h3><p>Latest students in the database</p>{% if recent_students %}<table style="margin-top:12px"><thead><tr><th>ID</th><th>Name</th><th>Course</th><th>Year</th></tr></thead><tbody>{% for row in recent_students %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>{% else %}<p style="margin-top:18px">No student records found.</p>{% endif %}</div>
@@ -737,11 +767,30 @@ def _load_dashboard_data():
         "SELECT status, COUNT(*) FROM attendance WHERE attendance_date=%s AND user_id=%s GROUP BY status",
         (date.today(), uid),
     )
+    # Last 7 days attendance for bar chart
+    weekly_attendance = fetch_all(
+        """
+        SELECT attendance_date,
+               SUM(CASE WHEN LOWER(status)='present' THEN 1 ELSE 0 END) as present,
+               SUM(CASE WHEN LOWER(status)='absent'  THEN 1 ELSE 0 END) as absent,
+               COUNT(*) as total
+        FROM attendance
+        WHERE user_id=%s
+          AND attendance_date >= CURRENT_DATE - INTERVAL '6 days'
+        GROUP BY attendance_date
+        ORDER BY attendance_date
+        """,
+        (uid,)
+    )
+    present = sum(count for status, count in today_attendance if str(status).lower() == "present")
+    absent  = sum(count for status, count in today_attendance if str(status).lower() == "absent")
     return {
-        "fee_total": float(fee_total[0][0] or 0) if fee_total else 0,
-        "present":   sum(count for status, count in today_attendance if str(status).lower() == "present"),
-        "absent":    sum(count for status, count in today_attendance if str(status).lower() == "absent"),
-        "events":    fetch_all("SELECT event_id, title, event_date, description FROM events WHERE user_id=%s ORDER BY event_date LIMIT 5", (uid,)),
+        "fee_total":         float(fee_total[0][0] or 0) if fee_total else 0,
+        "present":           present,
+        "absent":            absent,
+        "attendance_pct":    round((present * 100) / (present + absent)) if present + absent else 0,
+        "weekly_attendance": weekly_attendance,
+        "events":            fetch_all("SELECT event_id, title, event_date, description FROM events WHERE user_id=%s ORDER BY event_date LIMIT 5", (uid,)),
     }
 
 
@@ -787,7 +836,7 @@ def dashboard():
         "SELECT student_id, name FROM students WHERE user_id=%s ORDER BY name",
         (uid,)
     )
-    dashboard_data = _load_dashboard_data() if section == "dashboard" else {"fee_total": 0, "present": 0, "absent": 0, "events": []}
+    dashboard_data = _load_dashboard_data() if section == "dashboard" else {"fee_total": 0, "present": 0, "absent": 0, "attendance_pct": 0, "weekly_attendance": [], "events": []}
 
     if entity:
         rows         = fetch_all(f"SELECT {', '.join(entity['columns'])} FROM {entity['table']} WHERE user_id=%s ORDER BY {entity['columns'][0]} DESC", (uid,))
