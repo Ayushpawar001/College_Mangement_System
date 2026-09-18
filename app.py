@@ -26,6 +26,7 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS students (
             student_id SERIAL PRIMARY KEY,
+            user_id    INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
             age INT, gender VARCHAR(20),
             course VARCHAR(100), year INT,
@@ -35,6 +36,7 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS teachers (
             teacher_id SERIAL PRIMARY KEY,
+            user_id    INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
             subject VARCHAR(100), phone VARCHAR(15), email VARCHAR(100)
         )
@@ -42,26 +44,30 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS courses (
             course_id SERIAL PRIMARY KEY,
+            user_id   INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             course_name VARCHAR(100), duration INT, fees DECIMAL(10,2)
         )
     """)
     execute_query("""
         CREATE TABLE IF NOT EXISTS attendance (
             attendance_id SERIAL PRIMARY KEY,
+            user_id       INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             student_id INT, attendance_date DATE, status VARCHAR(20),
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
         )
     """)
     execute_query("""
         CREATE TABLE IF NOT EXISTS marks (
-            mark_id SERIAL PRIMARY KEY,
+            mark_id  SERIAL PRIMARY KEY,
+            user_id  INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             student_id INT, subject VARCHAR(100), marks DECIMAL(5,2),
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
         )
     """)
     execute_query("""
         CREATE TABLE IF NOT EXISTS fees (
-            fee_id SERIAL PRIMARY KEY,
+            fee_id   SERIAL PRIMARY KEY,
+            user_id  INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             student_id INT, amount DECIMAL(10,2),
             payment_date DATE, status VARCHAR(20),
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
@@ -70,10 +76,23 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS events (
             event_id SERIAL PRIMARY KEY,
+            user_id  INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
             title VARCHAR(100) NOT NULL,
             event_date DATE NOT NULL, description VARCHAR(255)
         )
     """)
+    # Add user_id column to existing tables if missing (migration)
+    for table in ["students","teachers","courses","attendance","marks","fees","events"]:
+        execute_query(f"""
+            DO $$ BEGIN
+                IF NOT EXISTS (
+                    SELECT 1 FROM information_schema.columns
+                    WHERE table_name='{table}' AND column_name='user_id'
+                ) THEN
+                    ALTER TABLE {table} ADD COLUMN user_id INT REFERENCES users(user_id) ON DELETE CASCADE;
+                END IF;
+            END $$
+        """)
     # Create default admin user
     import hashlib
     default_pwd = hashlib.sha256("Admin@2026".encode()).hexdigest()
@@ -707,31 +726,36 @@ def logout():
 # HELPER FUNCTIONS
 # ─────────────────────────────────────────────
 def _load_counts():
-    return {name: len(fetch_all(f"SELECT {item['columns'][0]} FROM {item['table']}")) for name, item in ENTITIES.items()}
+    uid = session.get("user_id")
+    return {name: len(fetch_all(f"SELECT {item['columns'][0]} FROM {item['table']} WHERE user_id=%s", (uid,))) for name, item in ENTITIES.items()}
 
 
 def _load_dashboard_data():
-    fee_total = fetch_all("SELECT COALESCE(SUM(amount), 0) FROM fees")
+    uid = session.get("user_id")
+    fee_total = fetch_all("SELECT COALESCE(SUM(amount), 0) FROM fees WHERE user_id=%s", (uid,))
     today_attendance = fetch_all(
-        "SELECT status, COUNT(*) FROM attendance WHERE attendance_date=%s GROUP BY status",
-        (date.today(),),
+        "SELECT status, COUNT(*) FROM attendance WHERE attendance_date=%s AND user_id=%s GROUP BY status",
+        (date.today(), uid),
     )
     return {
         "fee_total": float(fee_total[0][0] or 0) if fee_total else 0,
         "present":   sum(count for status, count in today_attendance if str(status).lower() == "present"),
         "absent":    sum(count for status, count in today_attendance if str(status).lower() == "absent"),
-        "events":    fetch_all("SELECT event_id, title, event_date, description FROM events ORDER BY event_date LIMIT 5"),
+        "events":    fetch_all("SELECT event_id, title, event_date, description FROM events WHERE user_id=%s ORDER BY event_date LIMIT 5", (uid,)),
     }
 
 
 def _load_display_rows(entity_name, entity, rows):
+    uid = session.get("user_id")
     if entity_name in {"attendance", "marks", "fees"}:
         table = entity["table"]
         linked_columns = ", ".join(f"{table}.{col}" for col in entity["form"] if col != "student_id")
         return fetch_all(
             f"SELECT {table}.{entity['columns'][0]}, students.name, {linked_columns} "
             f"FROM {table} JOIN students ON {table}.student_id = students.student_id "
-            f"ORDER BY {table}.{entity['columns'][0]} DESC"
+            f"WHERE {table}.user_id=%s "
+            f"ORDER BY {table}.{entity['columns'][0]} DESC",
+            (uid,)
         )
     return [[row[0], *row[1:]] for row in rows]
 
@@ -749,19 +773,24 @@ def index():
 @app.get("/home")
 @login_required
 def dashboard():
+    uid     = session.get("user_id")
     section = request.args.get("section", "dashboard")
     entity  = ENTITIES.get(section)
     rows, display_rows = [], []
 
     recent_students = fetch_all(
-        "SELECT student_id, name, course, year FROM students ORDER BY student_id DESC LIMIT 5"
+        "SELECT student_id, name, course, year FROM students WHERE user_id=%s ORDER BY student_id DESC LIMIT 5",
+        (uid,)
     ) if section == "dashboard" else []
 
-    student_options  = fetch_all("SELECT student_id, name FROM students ORDER BY name")
-    dashboard_data   = _load_dashboard_data() if section == "dashboard" else {"fee_total": 0, "present": 0, "absent": 0, "events": []}
+    student_options = fetch_all(
+        "SELECT student_id, name FROM students WHERE user_id=%s ORDER BY name",
+        (uid,)
+    )
+    dashboard_data = _load_dashboard_data() if section == "dashboard" else {"fee_total": 0, "present": 0, "absent": 0, "events": []}
 
     if entity:
-        rows         = fetch_all(f"SELECT {', '.join(entity['columns'])} FROM {entity['table']} ORDER BY {entity['columns'][0]} DESC")
+        rows         = fetch_all(f"SELECT {', '.join(entity['columns'])} FROM {entity['table']} WHERE user_id=%s ORDER BY {entity['columns'][0]} DESC", (uid,))
         display_rows = _load_display_rows(section, entity, rows)
 
     return render_template_string(
@@ -782,9 +811,10 @@ def dashboard():
 @app.post("/events/add")
 @login_required
 def add_event():
+    uid = session.get("user_id")
     execute_query(
-        "INSERT INTO events (title, event_date, description) VALUES (%s, %s, %s)",
-        (request.form.get("title", "").strip(), request.form.get("event_date", ""), request.form.get("description", "").strip()),
+        "INSERT INTO events (user_id, title, event_date, description) VALUES (%s, %s, %s, %s)",
+        (uid, request.form.get("title", "").strip(), request.form.get("event_date", ""), request.form.get("description", "").strip()),
     )
     return redirect(url_for("dashboard"))
 
@@ -792,16 +822,18 @@ def add_event():
 @app.route("/events/delete/<int:event_id>", methods=["GET", "POST"])
 @login_required
 def delete_event(event_id):
-    execute_query("DELETE FROM events WHERE event_id = %s", (event_id,))
+    uid = session.get("user_id")
+    execute_query("DELETE FROM events WHERE event_id=%s AND user_id=%s", (event_id, uid))
     return redirect(url_for("dashboard"))
 
 
 @app.post("/events/update/<int:event_id>")
 @login_required
 def update_event(event_id):
+    uid = session.get("user_id")
     execute_query(
-        "UPDATE events SET title=%s, event_date=%s, description=%s WHERE event_id=%s",
-        (request.form.get("title", "").strip(), request.form.get("event_date", ""), request.form.get("description", "").strip(), event_id),
+        "UPDATE events SET title=%s, event_date=%s, description=%s WHERE event_id=%s AND user_id=%s",
+        (request.form.get("title", "").strip(), request.form.get("event_date", ""), request.form.get("description", "").strip(), event_id, uid),
     )
     return redirect(url_for("dashboard"))
 
@@ -811,11 +843,15 @@ def update_event(event_id):
 def add_record(entity_name):
     if entity_name not in ENTITIES:
         return redirect(url_for("dashboard"))
+    uid    = session.get("user_id")
     entity = ENTITIES[entity_name]
     values = [request.form.get(field, "").strip() for field in entity["form"]]
+    # Insert with user_id
+    fields_with_uid = ["user_id"] + entity["form"]
+    values_with_uid = [uid] + values
     if not execute_query(
-        f"INSERT INTO {entity['table']} ({', '.join(entity['form'])}) VALUES ({', '.join(['%s'] * len(values))})",
-        values,
+        f"INSERT INTO {entity['table']} ({', '.join(fields_with_uid)}) VALUES ({', '.join(['%s'] * len(values_with_uid))})",
+        values_with_uid,
     ):
         flash("The record could not be added. Check the database connection and values.")
     else:
@@ -827,8 +863,12 @@ def add_record(entity_name):
 @login_required
 def delete_record(entity_name, record_id):
     if entity_name in ENTITIES:
+        uid    = session.get("user_id")
         entity = ENTITIES[entity_name]
-        execute_query(f"DELETE FROM {entity['table']} WHERE {entity['columns'][0]} = %s", (record_id,))
+        execute_query(
+            f"DELETE FROM {entity['table']} WHERE {entity['columns'][0]}=%s AND user_id=%s",
+            (record_id, uid)
+        )
         flash("Record deleted.")
     return redirect(url_for("dashboard", section=entity_name))
 
@@ -838,12 +878,13 @@ def delete_record(entity_name, record_id):
 def update_record(entity_name, record_id):
     if entity_name not in ENTITIES:
         return redirect(url_for("dashboard"))
+    uid    = session.get("user_id")
     entity = ENTITIES[entity_name]
     values = [request.form.get(field, "").strip() for field in entity["form"]]
     assignments = ", ".join(f"{field} = %s" for field in entity["form"])
     if execute_query(
-        f"UPDATE {entity['table']} SET {assignments} WHERE {entity['columns'][0]} = %s",
-        (*values, record_id),
+        f"UPDATE {entity['table']} SET {assignments} WHERE {entity['columns'][0]}=%s AND user_id=%s",
+        (*values, record_id, uid),
     ):
         flash(f"{entity['label'][:-1]} updated successfully.")
     else:
