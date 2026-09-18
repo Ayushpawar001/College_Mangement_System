@@ -478,12 +478,13 @@ TEMPLATE = """
         .dashboard-grid { display:grid; grid-template-columns:1.35fr .8fr 1.35fr; gap:10px; }
         .dashboard-panel { background:var(--panel); border:1px solid var(--border); padding:16px; min-height:284px; }
         .dashboard-panel h3 { margin:0 0 5px; font-size:15px; } .dashboard-panel p { color:var(--muted); margin:0; font-size:12px; }
-        .chart { height:190px; margin-top:28px; padding:10px 12px 0 32px; border-bottom:1px solid #284475; border-left:1px solid #284475; position:relative; background:linear-gradient(to bottom,transparent 32%,#1b3561 33%,transparent 34%,transparent 65%,#1b3561 66%,transparent 67%); }
-        .chart-line { position:absolute; left:32px; right:12px; top:58%; height:3px; background:var(--green); transform:rotate(-4deg); transform-origin:left; }
-        .chart-dot { position:absolute; right:10px; top:43%; width:13px; height:13px; background:var(--green); border-radius:50%; }
-        .ring { width:166px; height:166px; margin:16px auto 8px; border-radius:50%; background:conic-gradient(var(--green) 0 78%,#23477f 78% 100%); display:grid; place-items:center; }
-        .ring::after { content:""; width:116px; height:116px; border-radius:50%; background:var(--panel); }
-        .ring-label { position:absolute; margin-top:92px; text-align:center; font-size:24px; font-weight:800; } .legend { text-align:center; color:var(--green)!important; }
+        .bar-chart { display:flex; align-items:flex-end; gap:6px; height:150px; margin-top:16px; padding:0 4px 0 8px; border-bottom:2px solid #284475; border-left:2px solid #284475; }
+        .bar-chart .bar-col { flex:1; display:flex; flex-direction:column; align-items:center; gap:3px; height:100%; justify-content:flex-end; }
+        .bar-chart .bar-fill { width:80%; background:var(--green); border-radius:2px 2px 0 0; min-height:3px; transition:height 0.5s; }
+        .bar-chart .bar-pct { font-size:9px; color:#a7b4d4; }
+        .bar-chart .bar-date { font-size:9px; color:#a7b4d4; white-space:nowrap; }
+        .no-data-msg { display:flex; align-items:center; justify-content:center; height:150px; color:#a7b4d4; font-size:13px; }
+        .legend { text-align:center; color:var(--green)!important; }
         .quick,.status { background:var(--panel); border:1px solid var(--border); border-radius:0; padding:16px; margin-top:10px; }
         .quick h3,.status h3 { color:#fff; } .actions button { border-radius:0; }
         section { background:var(--panel); border-color:var(--border); border-radius:0; } label,input,select { color:var(--text); } input,select { background:#f8faff; color:#172033; }
@@ -548,35 +549,37 @@ TEMPLATE = """
 <div class="dashboard-grid">
   <div class="dashboard-panel"><h3>Attendance overview</h3><p>Last 7 days performance</p>
   {% if weekly_attendance %}
-  <div style="display:flex;align-items:flex-end;gap:6px;height:160px;margin-top:16px;padding:0 8px;border-bottom:1px solid #284475;border-left:1px solid #284475;">
+  <div class="bar-chart">
     {% for row in weekly_attendance %}
     {% set pct = ((row[1] * 100) / row[3])|round|int if row[3] else 0 %}
-    <div style="flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;">
-      <div style="font-size:9px;color:#a7b4d4;">{{ pct }}%</div>
-      <div style="width:100%;background:#10e981;height:{{ pct }}%;min-height:4px;border-radius:2px 2px 0 0;transition:height 0.3s;"></div>
-      <div style="font-size:9px;color:#a7b4d4;white-space:nowrap;">{{ row[0].strftime('%d/%m') if row[0] else '' }}</div>
+    <div class="bar-col">
+      <div class="bar-pct">{{ pct }}%</div>
+      <div class="bar-fill" style="height:{{ pct }}%;"></div>
+      <div class="bar-date">{{ row[0].strftime('%d/%m') if row[0] else '' }}</div>
     </div>
     {% endfor %}
   </div>
   {% else %}
-  <div style="display:flex;align-items:center;justify-content:center;height:160px;color:#a7b4d4;font-size:13px;margin-top:16px;">No attendance data yet</div>
+  <div class="no-data-msg">No attendance data yet</div>
   {% endif %}
   </div>
   <div class="dashboard-panel"><h3>Today's attendance</h3>
-  <div style="position:relative;width:166px;height:166px;margin:16px auto 8px;">
-    <svg width="166" height="166" style="transform:rotate(-90deg);">
-      <circle cx="83" cy="83" r="66" fill="none" stroke="#23477f" stroke-width="20"/>
-      <circle cx="83" cy="83" r="66" fill="none" stroke="#10e981" stroke-width="20"
-        stroke-dasharray="{{ (attendance_pct * 4.147)|round }} 414.7"
-        stroke-linecap="round"/>
+  <div style="position:relative;width:160px;height:160px;margin:16px auto 8px;">
+    <svg viewBox="0 0 160 160" width="160" height="160">
+      <circle cx="80" cy="80" r="60" fill="none" stroke="#23477f" stroke-width="22"/>
+      <circle cx="80" cy="80" r="60" fill="none" stroke="#10e981" stroke-width="22"
+        stroke-dasharray="{{ (attendance_pct * 3.77)|round }} 377"
+        stroke-dashoffset="94.25"
+        stroke-linecap="butt"
+        transform="rotate(-90 80 80)"/>
     </svg>
-    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;">
-      <div style="font-size:24px;font-weight:800;color:#fff;">{{ attendance_pct }}%</div>
-      <div style="font-size:10px;color:#a7b4d4;">Present</div>
+    <div style="position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;line-height:1.2;">
+      <div style="font-size:26px;font-weight:800;color:#fff;">{{ attendance_pct }}%</div>
+      <div style="font-size:10px;color:#a7b4d4;margin-top:2px;">Present</div>
     </div>
   </div>
-  <p class="legend attendance-key">Present &nbsp; {{ present }}</p>
-  <p class="legend attendance-key attendance-absent">Absent &nbsp; {{ absent }}</p>
+  <p class="legend attendance-key" style="text-align:center;margin-top:6px;">● Present &nbsp; {{ present }}</p>
+  <p class="legend attendance-key attendance-absent" style="text-align:center;margin-top:4px;">● Absent &nbsp; {{ absent }}</p>
   </div>
   <div class="dashboard-panel"><h3>Upcoming Events</h3><form class="event-form" method="post" action="{{ url_for('add_event') }}"><input name="title" placeholder="Title" required><input name="event_date" type="date" value="{{ today }}" required><input name="description" placeholder="Description"><button class="event-button event-add" type="submit">Add</button><button class="event-button event-update" type="button">Update</button><button class="event-button event-delete" type="reset">Delete</button></form><table class="events-table"><thead><tr><th>ID</th><th>Title</th><th>Date</th><th>Description</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event[0] }}</td><td>{{ event[1] }}</td><td>{{ event[2] }}</td><td>{{ event[3] }}</td></tr>{% else %}<tr><td colspan="4">No records found.</td></tr>{% endfor %}</tbody></table></div>
 </div>
