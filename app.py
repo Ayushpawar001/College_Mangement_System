@@ -506,6 +506,13 @@ TEMPLATE = """
         .entity-delete { background:#ef4444; }
         .internal-id { display:none; }
         .entity-clear { background:#64748b; } .entity-row { cursor:pointer; }
+        .form-grid { display:grid; grid-template-columns:1fr 1fr; gap:0 16px; }
+        .form-grid .full-width { grid-column:1 / -1; }
+        .form-field { margin-bottom:10px; }
+        .form-field label { display:block; margin-bottom:5px; color:var(--muted); font-size:12px; font-weight:600; letter-spacing:0.5px; }
+        .form-field input, .form-field select { width:100%; padding:9px 12px; background:#0d1b3e; border:1px solid #2a3f6e; border-radius:4px; color:var(--text); font:inherit; font-size:13px; box-sizing:border-box; }
+        .form-field input:focus, .form-field select:focus { border-color:#7044f5; outline:none; }
+        .form-field select option { background:#101f43; color:var(--text); }
         .logout-btn { display:block; margin:10px 12px 0; padding:10px 14px; background:#ef4444; color:#fff; text-align:center; text-decoration:none; font-weight:700; font-size:13px; border-radius:0; }
         .logout-btn:hover { background:#c53030; }
         .user-info { padding:10px 14px; color:#a7b4d4; font-size:12px; border-top:1px solid #203563; margin-top:8px; }
@@ -581,23 +588,30 @@ TEMPLATE = """
   <p class="legend attendance-key" style="text-align:center;margin-top:6px;">● Present &nbsp; {{ present }}</p>
   <p class="legend attendance-key attendance-absent" style="text-align:center;margin-top:4px;">● Absent &nbsp; {{ absent }}</p>
   </div>
-  <div class="dashboard-panel"><h3>Upcoming Events</h3><form class="event-form" method="post" action="{{ url_for('add_event') }}"><input name="title" placeholder="Title" required><input name="event_date" type="date" value="{{ today }}" required><input name="description" placeholder="Description"><button class="event-button event-add" type="submit">Add</button><button class="event-button event-update" type="button">Update</button><button class="event-button event-delete" type="reset">Delete</button></form><table class="events-table"><thead><tr><th>ID</th><th>Title</th><th>Date</th><th>Description</th></tr></thead><tbody>{% for event in events %}<tr><td>{{ event[0] }}</td><td>{{ event[1] }}</td><td>{{ event[2] }}</td><td>{{ event[3] }}</td></tr>{% else %}<tr><td colspan="4">No records found.</td></tr>{% endfor %}</tbody></table></div>
+  <div class="dashboard-panel"><h3>Upcoming Events</h3><form class="event-form" method="post" action="{{ url_for('add_event') }}"><input name="title" placeholder="Title" required><input name="event_date" type="date" value="{{ today }}" required><input name="description" placeholder="Description"><button class="event-button event-add" type="submit">Add</button><button class="event-button event-update" type="button">Update</button><button class="event-button event-delete" type="reset">Delete</button></form><table class="events-table"><thead><tr><th>Title</th><th>Date</th><th>Description</th></tr></thead><tbody>{% for event in events %}<tr style="cursor:pointer" onclick="selectEvent({{ event[0] }},'{{ event[1] }}','{{ event[2] }}','{{ event[3] or '' }}')"><td>{{ event[1] }}</td><td>{{ event[2] }}</td><td>{{ event[3] }}</td></tr>{% else %}<tr><td colspan="3">No records found.</td></tr>{% endfor %}</tbody></table></div>
 </div>
-<div class="dashboard-panel" style="margin-top:10px"><h3>Recent Students</h3><p>Latest students in the database</p>{% if recent_students %}<table style="margin-top:12px"><thead><tr><th>ID</th><th>Name</th><th>Course</th><th>Year</th></tr></thead><tbody>{% for row in recent_students %}<tr>{% for value in row %}<td>{{ value }}</td>{% endfor %}</tr>{% endfor %}</tbody></table>{% else %}<p style="margin-top:18px">No student records found.</p>{% endif %}</div>
+<div class="dashboard-panel" style="margin-top:10px"><h3>Recent Students</h3><p>Latest students in the database</p>{% if recent_students %}<table style="margin-top:12px"><thead><tr><th>Name</th><th>Course</th><th>Year</th></tr></thead><tbody>{% for row in recent_students %}<tr><td>{{ row[1] }}</td><td>{{ row[2] }}</td><td>{{ row[3] }}</td></tr>{% endfor %}</tbody></table>{% else %}<p style="margin-top:18px">No student records found.</p>{% endif %}</div>
 {% else %}
 <div class="grid">
   <section><h2>Add {{ entity.label[:-1] if entity.label.endswith('s') else entity.label }}</h2>
   <form id="entity-form" data-entity="{{ section }}" method="post" action="{{ url_for('add_record', entity_name=section) }}">
+  <div class="form-grid">
   {% for field in entity.form %}
-  <label for="{{ field }}">{{ 'Student Name' if field == 'student_id' else field.replace('_', ' ').title() }}</label>
-  {% if field == 'student_id' %}
-  <select id="{{ field }}" name="{{ field }}" required><option value="">Select student</option>{% for student_id, student_name in student_options %}<option value="{{ student_id }}">{{ student_name }}</option>{% endfor %}</select>
-  {% elif field == 'status' %}
-  <select id="{{ field }}" name="{{ field }}" required>{% if section == 'fees' %}<option value="Paid">Paid</option><option value="Pending">Pending</option>{% else %}<option value="Present">Present</option><option value="Absent">Absent</option>{% endif %}</select>
-  {% else %}
-  <input id="{{ field }}" name="{{ field }}" type="{{ 'date' if field.endswith('date') else ('number' if field in ['age', 'year', 'duration'] else 'text') }}" value="{{ today if field.endswith('date') else '' }}" {{ 'required' if field in ['name','course_name','attendance_date','subject'] else '' }}>
-  {% endif %}
+  {% set is_address = field == 'address' %}
+  <div class="form-field {{ 'full-width' if is_address else '' }}">
+    <label for="{{ field }}">{{ 'Student Name' if field == 'student_id' else field.replace('_', ' ').title() }}</label>
+    {% if field == 'student_id' %}
+    <select id="{{ field }}" name="{{ field }}" required><option value="">Select student</option>{% for student_id, student_name in student_options %}<option value="{{ student_id }}">{{ student_name }}</option>{% endfor %}</select>
+    {% elif field == 'status' %}
+    <select id="{{ field }}" name="{{ field }}" required>{% if section == 'fees' %}<option value="Paid">Paid</option><option value="Pending">Pending</option>{% else %}<option value="Present">Present</option><option value="Absent">Absent</option>{% endif %}</select>
+    {% elif field == 'gender' %}
+    <select id="{{ field }}" name="{{ field }}"><option value="">Select</option><option value="Male">Male</option><option value="Female">Female</option><option value="Other">Other</option></select>
+    {% else %}
+    <input id="{{ field }}" name="{{ field }}" type="{{ 'date' if field.endswith('date') else ('number' if field in ['age', 'year', 'duration', 'marks', 'fees', 'amount'] else 'text') }}" value="{{ today if field.endswith('date') else '' }}" placeholder="{{ field.replace('_',' ').title() }}" {{ 'required' if field in ['name','course_name','attendance_date','subject'] else '' }}>
+    {% endif %}
+  </div>
   {% endfor %}
+  </div>
   <div class="entity-actions"><button type="submit">Add record</button><button class="entity-update" type="button">Update</button><button class="entity-delete" type="button" disabled>Delete</button><button class="entity-clear" type="reset">Clear</button></div>
   </form></section>
   <section><h2>{{ entity.label }}</h2>{% if rows %}<table class="entity-table"><thead><tr><th class="internal-id">Record</th>{% for column in entity.display_columns %}<th>{{ column.replace('_', ' ').title() }}</th>{% endfor %}<th>Action</th></tr></thead><tbody>{% for row in display_rows %}<tr class="entity-row" data-values='{{ rows[loop.index0][1:]|tojson }}'><td class="internal-id">{{ row[0] }}</td>{% for value in row[1:] %}<td>{{ value }}</td>{% endfor %}<td><form method="post" action="{{ url_for('delete_record', entity_name=section, record_id=row[0]) }}"><button class="delete" type="submit">Delete</button></form></td></tr>{% endfor %}</tbody></table>{% else %}<p>No records found.</p>{% endif %}</section>
