@@ -1,8 +1,12 @@
 """Verify login credentials on Supabase."""
 import hashlib
+
 import psycopg2
 
-DATABASE_URL = "postgresql://postgres:Ayushpawar01@db.jybtewrvrefiuanxdxdj.supabase.co:5432/postgres"
+from config import DATABASE_URL
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set. Add it to the .env file or environment before running this script.")
 
 password = "Admin@2026"
 hashed = hashlib.sha256(password.encode()).hexdigest()
@@ -11,17 +15,17 @@ print(f"Hash of Admin@2026: {hashed}")
 conn = psycopg2.connect(DATABASE_URL, sslmode="require")
 cur = conn.cursor()
 
-# Check what's in users table
 cur.execute("SELECT user_id, username, email, password, role FROM users")
 users = cur.fetchall()
-print(f"\nUsers in Supabase:")
-for u in users:
-    print(f"  ID:{u[0]} | user:{u[1]} | email:{u[2]} | hash_match:{u[3]==hashed} | role:{u[4]}")
+print("
+Users in Supabase:")
+for user in users:
+    print(f"  ID:{user[0]} | user:{user[1]} | email:{user[2]} | hash_match:{user[3] == hashed} | role:{user[4]}")
 
-# Fix: update admin password hash
-cur.execute("UPDATE users SET password=%s WHERE username='admin'", (hashed,))
+cur.execute("UPDATE users SET password = %s WHERE username = 'admin'", (hashed,))
 conn.commit()
-print("\nAdmin password hash updated on Supabase!")
+print("
+Admin password hash updated on Supabase!")
 print("Login with: admin / Admin@2026")
 
 cur.close()

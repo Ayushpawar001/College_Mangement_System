@@ -13,6 +13,22 @@ app.secret_key = SECRET_KEY
 
 def init_db():
     """Auto-create all tables and default admin on startup."""
+    from database import _is_mysql
+    mysql = _is_mysql()
+
+    if mysql:
+        # MySQL mode - tables already created via mysql_setup.sql
+        # Just ensure admin user exists
+        import hashlib
+        default_pwd = hashlib.sha256("Admin@2026".encode()).hexdigest()
+        execute_query("""
+            INSERT IGNORE INTO users (username, email, password, role)
+            VALUES ('admin', 'admin@prmceam.com', %s, 'admin')
+        """, (default_pwd,))
+        print("MySQL: Database ready!")
+        return
+
+    # PostgreSQL mode (Render/Supabase)
     execute_query("""
         CREATE TABLE IF NOT EXISTS users (
             user_id    SERIAL PRIMARY KEY,
@@ -26,7 +42,7 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS students (
             student_id SERIAL PRIMARY KEY,
-            user_id    INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id    INT REFERENCES users(user_id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
             age INT, gender VARCHAR(20),
             course VARCHAR(100), year INT,
@@ -36,7 +52,7 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS teachers (
             teacher_id SERIAL PRIMARY KEY,
-            user_id    INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id    INT REFERENCES users(user_id) ON DELETE CASCADE,
             name VARCHAR(100) NOT NULL,
             subject VARCHAR(100), phone VARCHAR(15), email VARCHAR(100)
         )
@@ -44,14 +60,14 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS courses (
             course_id SERIAL PRIMARY KEY,
-            user_id   INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id   INT REFERENCES users(user_id) ON DELETE CASCADE,
             course_name VARCHAR(100), duration INT, fees DECIMAL(10,2)
         )
     """)
     execute_query("""
         CREATE TABLE IF NOT EXISTS attendance (
             attendance_id SERIAL PRIMARY KEY,
-            user_id       INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id       INT REFERENCES users(user_id) ON DELETE CASCADE,
             student_id INT, attendance_date DATE, status VARCHAR(20),
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
         )
@@ -59,7 +75,7 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS marks (
             mark_id  SERIAL PRIMARY KEY,
-            user_id  INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id  INT REFERENCES users(user_id) ON DELETE CASCADE,
             student_id INT, subject VARCHAR(100), marks DECIMAL(5,2),
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
         )
@@ -67,7 +83,7 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS fees (
             fee_id   SERIAL PRIMARY KEY,
-            user_id  INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id  INT REFERENCES users(user_id) ON DELETE CASCADE,
             student_id INT, amount DECIMAL(10,2),
             payment_date DATE, status VARCHAR(20),
             FOREIGN KEY (student_id) REFERENCES students(student_id) ON DELETE CASCADE
@@ -76,24 +92,11 @@ def init_db():
     execute_query("""
         CREATE TABLE IF NOT EXISTS events (
             event_id SERIAL PRIMARY KEY,
-            user_id  INT NOT NULL REFERENCES users(user_id) ON DELETE CASCADE,
+            user_id  INT REFERENCES users(user_id) ON DELETE CASCADE,
             title VARCHAR(100) NOT NULL,
             event_date DATE NOT NULL, description VARCHAR(255)
         )
     """)
-    # Add user_id column to existing tables if missing (migration)
-    for table in ["students","teachers","courses","attendance","marks","fees","events"]:
-        execute_query(f"""
-            DO $$ BEGIN
-                IF NOT EXISTS (
-                    SELECT 1 FROM information_schema.columns
-                    WHERE table_name='{table}' AND column_name='user_id'
-                ) THEN
-                    ALTER TABLE {table} ADD COLUMN user_id INT REFERENCES users(user_id) ON DELETE CASCADE;
-                END IF;
-            END $$
-        """)
-    # Create default admin user
     import hashlib
     default_pwd = hashlib.sha256("Admin@2026".encode()).hexdigest()
     execute_query("""
@@ -101,7 +104,7 @@ def init_db():
         VALUES ('admin', 'admin@prmceam.com', %s, 'admin')
         ON CONFLICT (username) DO NOTHING
     """, (default_pwd,))
-    print("Database initialized successfully!")
+    print("PostgreSQL: Database initialized successfully!")
 
 
 # Initialize DB on startup
@@ -390,7 +393,7 @@ ENTITIES = {
         "label": "Students",
         "table": "students",
         "columns": ["student_id", "name", "age", "gender", "course", "year", "phone", "email", "address"],
-        "form": ["name", "age", "gender", "course", "year", "phone", "email", "address"],
+        "form":    ["name", "age", "gender", "course", "year", "phone", "email", "address"],
         "display_columns": ["name", "age", "gender", "course", "year", "phone", "email", "address"],
     },
     "teachers": {
@@ -599,9 +602,11 @@ TEMPLATE = """
   {% for field in entity.form %}
   {% set is_address = field == 'address' %}
   <div class="form-field {{ 'full-width' if is_address else '' }}">
-    <label for="{{ field }}">{{ 'Student Name' if field == 'student_id' else field.replace('_', ' ').title() }}</label>
+    <label for="{{ field }}">{{ 'Student Name' if field == 'student_id' else ('Course' if field == 'course_id' else field.replace('_', ' ').title()) }}</label>
     {% if field == 'student_id' %}
     <select id="{{ field }}" name="{{ field }}" required><option value="">Select student</option>{% for student_id, student_name in student_options %}<option value="{{ student_id }}">{{ student_name }}</option>{% endfor %}</select>
+    {% elif field == 'course_id' %}
+    <select id="{{ field }}" name="{{ field }}" required><option value="">Select course</option>{% for course_id, course_name in course_options %}<option value="{{ course_id }}">{{ course_name }}</option>{% endfor %}</select>
     {% elif field == 'status' %}
     <select id="{{ field }}" name="{{ field }}" required>{% if section == 'fees' %}<option value="Paid">Paid</option><option value="Pending">Pending</option>{% else %}<option value="Present">Present</option><option value="Absent">Absent</option>{% endif %}</select>
     {% elif field == 'gender' %}
@@ -784,16 +789,17 @@ def _load_dashboard_data():
         "SELECT status, COUNT(*) FROM attendance WHERE attendance_date=%s AND user_id=%s GROUP BY status",
         (date.today(), uid),
     )
-    # Last 7 days attendance for bar chart
+    from database import _is_mysql
+    interval_sql = "DATE_SUB(CURDATE(), INTERVAL 6 DAY)" if _is_mysql() else "CURRENT_DATE - INTERVAL '6 days'"
     weekly_attendance = fetch_all(
-        """
+        f"""
         SELECT attendance_date,
-               SUM(CASE WHEN LOWER(status)='present' THEN 1 ELSE 0 END) as present,
-               SUM(CASE WHEN LOWER(status)='absent'  THEN 1 ELSE 0 END) as absent,
-               COUNT(*) as total
+               SUM(CASE WHEN LOWER(status)='present' THEN 1 ELSE 0 END),
+               SUM(CASE WHEN LOWER(status)='absent'  THEN 1 ELSE 0 END),
+               COUNT(*)
         FROM attendance
         WHERE user_id=%s
-          AND attendance_date >= CURRENT_DATE - INTERVAL '6 days'
+          AND attendance_date >= {interval_sql}
         GROUP BY attendance_date
         ORDER BY attendance_date
         """,
@@ -813,6 +819,13 @@ def _load_dashboard_data():
 
 def _load_display_rows(entity_name, entity, rows):
     uid = session.get("user_id")
+    if entity_name == "students":
+        # students table has 'course' text column directly — no JOIN needed
+        return fetch_all(
+            "SELECT student_id, name, age, gender, course, year, phone, email, address "
+            "FROM students WHERE user_id=%s ORDER BY student_id DESC",
+            (uid,),
+        )
     if entity_name in {"attendance", "marks", "fees"}:
         table = entity["table"]
         linked_columns = ", ".join(f"{table}.{col}" for col in entity["form"] if col != "student_id")
@@ -849,6 +862,7 @@ def dashboard():
         (uid,)
     ) if section == "dashboard" else []
 
+    course_options = []
     student_options = fetch_all(
         "SELECT student_id, name FROM students WHERE user_id=%s ORDER BY name",
         (uid,)
@@ -870,6 +884,7 @@ def dashboard():
         display_rows=display_rows,
         recent_students=recent_students,
         student_options=student_options,
+        course_options=course_options,
         today=date.today().isoformat(),
     )
 

@@ -23,11 +23,12 @@ def load_local_env():
 load_local_env()
 
 # --- Application ---
-PORT       = int(os.getenv("PORT",       "5000"))
-SECRET_KEY =     os.getenv("SECRET_KEY", "college-management-secret-key-2026")
+PORT = int(os.getenv("PORT", "5000"))
+SECRET_KEY = os.getenv("SECRET_KEY")
+if not SECRET_KEY:
+    raise RuntimeError("SECRET_KEY must be set in the environment or .env file.")
 
 # --- Supabase PostgreSQL ---
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:Ayushpawar01@db.jybtewrvrefiuanxdxdj.supabase.co:6543/postgres"
-)
+DATABASE_URL = os.getenv("DATABASE_URL")
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL must be set in the environment or .env file.")

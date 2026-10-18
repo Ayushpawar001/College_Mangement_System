@@ -1,5 +1,6 @@
 # Environment variables (contains secrets - never commit)
 .env
+college_db_backup.sql
 
 # Virtual environment
 .venv/

@@ -4,7 +4,7 @@ Usage: python setup_db.py
 """
 import psycopg2
 
-DATABASE_URL = "postgresql://postgres:Ayushpawar01@db.jybtewrvrefiuanxdxdj.supabase.co:5432/postgres"
+from config import DATABASE_URL
 
 SQL = """
 CREATE TABLE IF NOT EXISTS students (
@@ -67,22 +67,24 @@ CREATE TABLE IF NOT EXISTS events (
 );
 """
 
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set. Add it to the .env file or environment before running this script.")
+
 try:
     conn = psycopg2.connect(DATABASE_URL, sslmode="require")
     cur = conn.cursor()
     cur.execute(SQL)
     conn.commit()
 
-    # Verify tables
     cur.execute("SELECT tablename FROM pg_tables WHERE schemaname='public'")
     tables = cur.fetchall()
-    print("✅ Tables created successfully:")
-    for t in tables:
-        print(f"   - {t[0]}")
+    print("Tables created successfully:")
+    for table in tables:
+        print(f"   - {table[0]}")
 
     cur.close()
     conn.close()
-    print("✅ Supabase connection OK!")
+    print("Supabase connection OK!")
 
-except Exception as e:
-    print(f"❌ Error: {e}")
+except Exception as exc:
+    print(f"Error: {exc}")

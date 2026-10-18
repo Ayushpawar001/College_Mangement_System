@@ -1,17 +1,18 @@
 """Fix Supabase tables - drop and recreate with correct schema."""
 import psycopg2
 
-DATABASE_URL = "postgresql://postgres:Ayushpawar01@db.jybtewrvrefiuanxdxdj.supabase.co:5432/postgres"
+from config import DATABASE_URL
+
+if not DATABASE_URL:
+    raise RuntimeError("DATABASE_URL is not set. Add it to the .env file or environment before running this script.")
 
 conn = psycopg2.connect(DATABASE_URL, sslmode="require")
 cur = conn.cursor()
 
-# Check existing students columns
 cur.execute("SELECT column_name FROM information_schema.columns WHERE table_name='students' ORDER BY ordinal_position")
-cols = [r[0] for r in cur.fetchall()]
+cols = [row[0] for row in cur.fetchall()]
 print("Current students columns:", cols)
 
-# Drop all tables and recreate with correct schema
 cur.execute("""
     DROP TABLE IF EXISTS fees CASCADE;
     DROP TABLE IF EXISTS marks CASCADE;
@@ -85,10 +86,9 @@ CREATE TABLE events (
 
 conn.commit()
 
-# Verify all columns
 for table in ['students', 'teachers', 'courses', 'attendance', 'marks', 'fees', 'events']:
     cur.execute(f"SELECT column_name FROM information_schema.columns WHERE table_name='{table}' ORDER BY ordinal_position")
-    cols = [r[0] for r in cur.fetchall()]
+    cols = [row[0] for row in cur.fetchall()]
     print(f"  {table}: {cols}")
 
 cur.close()

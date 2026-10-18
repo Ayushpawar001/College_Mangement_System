@@ -1,26 +1,55 @@
+import os
 import urllib.parse
-import pg8000.dbapi
+
 from config import DATABASE_URL
 
 
-def _get_conn_params():
-    """Parse DATABASE_URL into connection parameters."""
-    r = urllib.parse.urlparse(DATABASE_URL)
-    return {
-        "host":     r.hostname,
-        "port":     r.port or 5432,
-        "user":     r.username,
-        "password": r.password,
-        "database": r.path.lstrip("/"),
-        "ssl_context": True,
-    }
+def _is_mysql():
+    """Check if we should use MySQL (local) or PostgreSQL (cloud)."""
+    return DATABASE_URL.startswith("mysql://") or os.getenv("USE_MYSQL", "false").lower() == "true"
 
 
 def get_connection():
-    """Get PostgreSQL connection."""
+    """Get database connection — MySQL locally, PostgreSQL on Render."""
+    if _is_mysql():
+        return _get_mysql_connection()
+    return _get_pg_connection()
+
+
+def _get_mysql_connection():
+    """Connect to local MySQL."""
     try:
-        conn = pg8000.dbapi.connect(**_get_conn_params())
+        import mysql.connector
+        conn = mysql.connector.connect(
+            host="127.0.0.1",
+            user="root",
+            password="Ayushpawar01",
+            database="college_db",
+            port=3306,
+            use_pure=True,
+            auth_plugin="mysql_native_password"
+        )
         return conn
+    except Exception as e:
+        print("MySQL connection error:", e)
+        return None
+
+
+def _get_pg_connection():
+    """Connect to PostgreSQL (Supabase / Render)."""
+    try:
+        import pg8000.dbapi
+        r = urllib.parse.urlparse(DATABASE_URL)
+        params = {
+            "host":     r.hostname,
+            "port":     r.port or 5432,
+            "user":     urllib.parse.unquote(r.username or "postgres"),
+            "password": urllib.parse.unquote(r.password or ""),
+            "database": r.path.lstrip("/"),
+            "timeout":  15,
+            "ssl_context": True,
+        }
+        return pg8000.dbapi.connect(**params)
     except Exception as e:
         print("Database connection error:", e)
         return None
@@ -28,6 +57,7 @@ def get_connection():
 
 def execute_query(query, values=None):
     """Execute INSERT, UPDATE, DELETE queries."""
+    # Convert PostgreSQL %s to MySQL %s (same, no change needed)
     connection = get_connection()
     if connection is None:
         return False
