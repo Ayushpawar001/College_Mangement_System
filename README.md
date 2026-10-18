@@ -1,6 +1,6 @@
 # 🎓 PRMCEAM - College Management System
 
-A full-featured College Management System built with **Python** and **Flask**, connected to **Supabase PostgreSQL** database with full authentication.
+A full-featured College Management System built with **Python** and **Flask**, connected to **MySQL** database, with full authentication and hosted on **Render**.
 
 ---
 
@@ -8,7 +8,7 @@ A full-featured College Management System built with **Python** and **Flask**, c
 
 | Module | Description |
 |---|---|
-| 🔐 Authentication | Login / Register / Logout system |
+| 🔐 Authentication | Login / Register / Logout per user |
 | 🎓 Students | Add, update, delete, view student records |
 | 👨‍🏫 Teachers | Manage teacher information |
 | 📚 Courses | Manage course details and fees |
@@ -16,7 +16,7 @@ A full-featured College Management System built with **Python** and **Flask**, c
 | 📝 Marks | Record and view student marks |
 | 💰 Fees | Track fee payments and status |
 | 📅 Events | Add and manage college events |
-| 📊 Dashboard | Live stats and overview of all modules |
+| 📊 Dashboard | Live stats, charts, and overview |
 
 ---
 
@@ -25,42 +25,43 @@ A full-featured College Management System built with **Python** and **Flask**, c
 ```
 CollegeManagementSystem/
 │
-├── app.py                    # Flask web application (with auth)
-├── database.py               # PostgreSQL connection (Supabase)
-├── config.py                 # Configuration loaded from .env
-├── setup_db.py               # Run once to create tables on Supabase
-├── create_users_table.py     # Run once to create users table
-├── .env                      # Environment variables (not pushed to GitHub)
-├── .env.example              # Sample environment variables
-├── .gitignore                # Files ignored by Git
-├── Procfile                  # Render deployment config
-├── runtime.txt               # Python version for Render
-├── .python-version           # Python version pin
-├── requirements.txt          # Python dependencies
-└── README.md                 # Project documentation
+├── app.py                # Flask web app (auth + all modules)
+├── database.py           # MySQL / PostgreSQL connection handler
+├── config.py             # Loads settings from .env
+├── mysql_setup.sql       # Run once to create all MySQL tables
+├── .env                  # Your local environment variables (not on GitHub)
+├── .env.example          # Template for .env
+├── .gitignore            # Files excluded from Git
+├── Procfile              # Render start command
+├── requirements.txt      # Python packages
+└── README.md             # This file
 ```
 
 ---
 
 ## ⚙️ Environment Variables
 
-Create a `.env` file in the root folder:
+Create a `.env` file in the project root:
 
 ```env
 # Application
-PORT=5000
-SECRET_KEY=your-secret-key-here
+PORT=8080
+SECRET_KEY=college-management-secret-key-2026
 
-# Supabase PostgreSQL
+# Set to true when using local MySQL
+USE_MYSQL=true
+
+# Supabase / Render PostgreSQL (used when USE_MYSQL=false)
 DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@db.YOUR_PROJECT.supabase.co:5432/postgres
 ```
 
 ---
 
-## 🚀 Installation & Setup
+## 🚀 Local Setup (MySQL)
 
 ### Prerequisites
 - Python 3.11+
+- MySQL 8.0+
 - pip
 
 ### 1. Clone the Repository
@@ -84,29 +85,31 @@ source .venv/bin/activate     # Mac/Linux
 pip install -r requirements.txt
 ```
 
-### 4. Configure Environment
+### 4. Create MySQL Database and Tables
+
+Open MySQL and run:
 
 ```bash
-copy .env.example .env       # Windows
-cp .env.example .env         # Mac/Linux
+mysql -u root -p < mysql_setup.sql
 ```
 
-Edit `.env` with your Supabase credentials.
+Or open **MySQL Workbench** → run `mysql_setup.sql`
 
-### 5. Setup Database Tables
+### 5. Configure .env
 
 ```bash
-python setup_db.py
-python create_users_table.py
+copy .env.example .env    # Windows
 ```
 
-### 6. Run the Web App
+Edit `.env` — set your MySQL password and `USE_MYSQL=true`
+
+### 6. Run the App
 
 ```bash
 python app.py
 ```
 
-Open browser: **http://127.0.0.1:5000**
+Open browser: **http://127.0.0.1:8080**
 
 Login with:
 - **Username:** `admin`
@@ -114,47 +117,76 @@ Login with:
 
 ---
 
-## 🗄️ Database Schema
+## 🗄️ MySQL Database Schema
 
-```
-students    (student_id, name, age, gender, course, year, phone, email, address)
-teachers    (teacher_id, name, subject, phone, email)
-courses     (course_id, course_name, duration, fees)
-attendance  (attendance_id, student_id, attendance_date, status)
-marks       (mark_id, student_id, subject, marks)
-fees        (fee_id, student_id, amount, payment_date, status)
-events      (event_id, title, event_date, description)
+```sql
 users       (user_id, username, email, password, role, created_at)
+students    (student_id, user_id, name, age, gender, course, year, phone, email, address)
+teachers    (teacher_id, user_id, name, subject, phone, email)
+courses     (course_id, user_id, course_name, duration, fees)
+attendance  (attendance_id, user_id, student_id, attendance_date, status)
+marks       (mark_id, user_id, student_id, subject, marks)
+fees        (fee_id, user_id, student_id, amount, payment_date, status)
+events      (event_id, user_id, title, event_date, description)
 ```
+
+Each table has a `user_id` column — data is isolated per logged-in account.
 
 ---
 
 ## 🌐 Deployment on Render
 
-1. Push code to GitHub
-2. Go to **https://dashboard.render.com**
-3. Create new **Web Service** → connect GitHub repo
-4. Set **Build Command:** `pip install -r requirements.txt`
-5. Set **Start Command:** `gunicorn app:app`
-6. Add **Environment Variables:**
+### Step 1 — Push code to GitHub
+
+```bash
+git add .
+git commit -m "update"
+git push origin main
+```
+
+### Step 2 — Create Web Service on Render
+
+1. Go to **https://dashboard.render.com**
+2. Click **+ New** → **Web Service**
+3. Connect your GitHub repo
+4. Set:
+   - **Build Command:** `pip install -r requirements.txt`
+   - **Start Command:** `gunicorn app:app`
+
+### Step 3 — Add Environment Variables on Render
 
 | Key | Value |
 |---|---|
-| `PYTHON_VERSION` | `3.11.9` |
-| `DATABASE_URL` | your Supabase connection string |
-| `SECRET_KEY` | your secret key |
-| `PORT` | `5000` |
+| `DATABASE_URL` | Your Render PostgreSQL internal URL |
+| `SECRET_KEY` | `college-management-secret-key-2026` |
+| `USE_MYSQL` | `false` |
+
+### Step 4 — Create Render PostgreSQL Database
+
+1. Click **+ New** → **PostgreSQL** → Free plan → Create
+2. Copy the **Internal Database URL**
+3. Paste it as `DATABASE_URL` in your web service environment
 
 ---
 
 ## 📦 Dependencies
 
 ```
-Flask==3.0.3          # Web framework
-gunicorn==22.0.0      # Production WSGI server
-psycopg2-binary       # PostgreSQL driver
-cryptography==42.0.8  # Encryption support
+Flask==3.0.3             # Web framework
+gunicorn==22.0.0         # Production server (Render)
+mysql-connector-python   # MySQL driver (local)
+pg8000==1.31.2           # PostgreSQL driver (Render)
+cryptography==42.0.8     # Password hashing support
 ```
+
+---
+
+## 🔐 Default Login
+
+| Field | Value |
+|---|---|
+| Username | `admin` |
+| Password | `Admin@2026` |
 
 ---
 
@@ -162,10 +194,11 @@ cryptography==42.0.8  # Encryption support
 
 **Ayush Pawar**
 - GitHub: [@Ayushpawar001](https://github.com/Ayushpawar001)
-- Project: [College Management System](https://github.com/Ayushpawar001/College_Mangement_System)
+- Live Site: [https://college-mangement-system-6.onrender.com](https://college-mangement-system-6.onrender.com)
+- Repo: [College Management System](https://github.com/Ayushpawar001/College_Mangement_System)
 
 ---
 
 ## 📄 License
 
-This project is for educational purposes at **PRMCEAM College**.
+For educational purposes at **PRMCEAM College**.
